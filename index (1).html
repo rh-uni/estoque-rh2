@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estoque de Uniformes – RH</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e1e5ec;--ac:#2f6fed;--rd:#d64545}
+@media (prefers-color-scheme:dark){:root{--bg:#14171d;--card:#1d222b;--tx:#e8ebf2;--mut:#98a1b5;--bd:#2c3340;--ac:#5b8cff;--rd:#ef6b6b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 14px}h2{font-size:16px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+input,select{flex:1 1 130px;min-width:0;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+button{padding:9px 14px;border:0;border-radius:8px;background:var(--ac);color:#fff;font:inherit;cursor:pointer}
+button.del{background:transparent;color:var(--rd);border:1px solid var(--bd);padding:5px 10px}
+button.ed{background:transparent;color:var(--ac);border:1px solid var(--bd);padding:5px 10px;margin-right:6px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--bd);white-space:nowrap}
+th{color:var(--mut);font-weight:600;font-size:13px}
+.low{color:var(--rd);font-weight:600}
+.empty{color:var(--mut);padding:8px 0}
+#msg{color:var(--rd);margin:0 0 10px;min-height:1em;position:sticky;top:0;background:var(--bg);padding:4px 0;z-index:5;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>👕 Estoque de Uniformes – RH</h1>
+<p id="msg"></p>
+<p id="status" style="color:var(--mut);margin:0 0 10px;font-size:13px">Conectando…</p>
+
+<section class="card">
+<h2>Adicionar item ao estoque</h2>
+<div class="row">
+<select id="cat"><option value="">Categoria…</option><option>Calça</option><option>Blusa</option><option>Jaleco</option><option>Kit limpeza azul</option><option>Kit limpeza bege</option><option>Kit limpeza branco</option><option>Outro</option></select>
+<select id="sexo"><option value="">Sexo…</option><option>Masculino</option><option>Feminino</option></select>
+<input id="nome" placeholder="Item (ex.: Camisa polo)">
+<select id="tam"><option value="">Tamanho…</option><optgroup label="Letras"><option>PP</option><option>P</option><option>M</option><option>G</option><option>GG</option><option>XG</option><option>XGG</option><option>XGGG</option></optgroup><optgroup label="Números"><option>34</option><option>36</option><option>38</option><option>40</option><option>42</option><option>44</option><option>46</option><option>48</option><option>50</option><option>52</option><option>54</option><option>56</option><option>58</option></optgroup></select>
+<input id="qtd" type="number" min="1" placeholder="Quantidade">
+<button id="add">Adicionar</button>
+</div>
+</section>
+
+<section class="card">
+<h2>Filtros</h2>
+<div class="row">
+<select id="fCat"><option value="">Todas as categorias</option><option>Calça</option><option>Blusa</option><option>Jaleco</option><option>Kit limpeza azul</option><option>Kit limpeza bege</option><option>Kit limpeza branco</option><option>Outro</option><option value="__none">Sem categoria</option></select>
+<select id="fSexo"><option value="">Todos os sexos</option><option>Masculino</option><option>Feminino</option><option value="__none">Sem sexo informado</option></select>
+<select id="fTam"><option value="">Todos os tamanhos</option></select>
+<button id="limpar" class="del" style="color:var(--tx)">Limpar filtros</button>
+</div>
+<p style="color:var(--mut);margin:8px 0 0;font-size:13px">Os filtros valem para o estoque, a lista de retirada e o histórico.</p>
+</section>
+
+<section class="card">
+<h2>Estoque atual</h2>
+<div class="scroll"><table>
+<thead><tr><th>Item</th><th>Categoria</th><th>Sexo</th><th>Tamanho</th><th>Qtd.</th><th></th></tr></thead>
+<tbody id="itens"></tbody></table></div>
+</section>
+
+<section class="card">
+<h2>Registrar retirada</h2>
+<div class="row">
+<select id="selItem"></select>
+<input id="func" placeholder="Funcionário que recebe">
+<input id="resp" placeholder="Entregue por (seu nome)">
+<input id="rqtd" type="number" min="1" value="1">
+<button id="ret">Registrar</button>
+</div>
+</section>
+
+<section class="card">
+<h2>Histórico de retiradas</h2>
+<div class="scroll"><table>
+<thead><tr><th>Data</th><th>Item</th><th>Categoria</th><th>Sexo</th><th>Tam.</th><th>Funcionário</th><th>Entregue por</th><th>Qtd.</th></tr></thead>
+<tbody id="hist"></tbody></table></div>
+</section>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, increment,
+         onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCmIThHte8cnWrXZ8VptPmk-6Dx8TUiIYY",
+  authDomain: "estoque-uniformes-rh.firebaseapp.com",
+  projectId: "estoque-uniformes-rh",
+  storageBucket: "estoque-uniformes-rh.firebasestorage.app",
+  messagingSenderId: "1083105733375",
+  appId: "1:1083105733375:web:060943d070011ed6277aca"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $ = id => document.getElementById(id);
+let items = [], log = [], editing = null;
+const filtro = { cat: "", sexo: "", tam: "" };
+const passa = x => {
+  if (filtro.cat === "__none" ? x.categoria : (filtro.cat && x.categoria !== filtro.cat)) return false;
+  if (filtro.sexo === "__none" ? x.sexo : (filtro.sexo && x.sexo !== filtro.sexo)) return false;
+  if (filtro.tam && (x.tam || "") !== filtro.tam) return false;
+  return true;
+};
+const ORDEM_TAM = ["PP", "P", "M", "G", "GG", "XG", "XGG", "XGGG", ...Array.from({ length: 13 }, (_, i) => String(34 + 2 * i))];
+const rankTam = t => { const i = ORDEM_TAM.indexOf(String(t).toUpperCase()); return i < 0 ? 999 : i; };
+const msg = t => { $("msg").textContent = t || ""; };
+const setStatus = t => { $("status").textContent = t; };
+const errTxt = e => {
+  const c = e && e.code;
+  if (c === "permission-denied") return "sem permissão (confira se as regras do Firestore foram publicadas)";
+  if (c === "unavailable") return "sem conexão com o servidor";
+  if (c === "sem-resposta") return "o servidor não respondeu (confira a internet, se o Firestore foi criado e se as regras foram publicadas)";
+  return (e && (e.code || e.message)) || "erro";
+};
+const comTimeout = (p, ms = 12000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej({ code: "sem-resposta" }), ms))]);
+window.addEventListener("unhandledrejection", ev => msg("Erro inesperado: " + errTxt(ev.reason)));
+window.addEventListener("error", ev => msg("Erro inesperado: " + ev.message));
+function cell(tr, txt, cls) { const td = document.createElement("td"); td.textContent = txt; if (cls) td.className = cls; tr.appendChild(td); return td; }
+
+function render() {
+  const tamSel = $("fTam");
+  const tams = [...new Set([...items, ...log].map(x => x.tam).filter(Boolean))].sort((a, b) => (rankTam(a) - rankTam(b)) || a.localeCompare(b, "pt-BR", { numeric: true }));
+  tamSel.textContent = "";
+  const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "Todos os tamanhos"; tamSel.appendChild(o0);
+  tams.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; tamSel.appendChild(o); });
+  tamSel.value = tams.includes(filtro.tam) ? filtro.tam : "";
+  if (tamSel.value !== filtro.tam) filtro.tam = "";
+
+  const vis = items.filter(passa), visLog = log.filter(passa);
+  const tb = $("itens"); tb.textContent = "";
+  if (!vis.length) { const r = document.createElement("tr"); const td = cell(r, items.length ? "Nenhum item com esses filtros." : "Nenhum item cadastrado.", "empty"); td.colSpan = 6; tb.appendChild(r); }
+  vis.forEach(it => {
+    const tr = document.createElement("tr");
+    cell(tr, it.nome); cell(tr, it.categoria || "–"); cell(tr, it.sexo || "–"); cell(tr, it.tam || "–");
+    if (editing === it.id) {
+      const qt = document.createElement("td"), inp = document.createElement("input");
+      inp.type = "number"; inp.min = "0"; inp.value = it.qtd; inp.style.cssText = "width:80px;flex:none";
+      const ok = document.createElement("button"); ok.textContent = "Salvar"; ok.style.marginLeft = "6px";
+      const no = document.createElement("button"); no.className = "del"; no.textContent = "Cancelar"; no.style.marginLeft = "6px";
+      ok.onclick = async () => {
+        const n = parseInt(inp.value, 10);
+        if (!(n >= 0)) { msg("Informe uma quantidade válida."); return; }
+        msg(""); ok.disabled = true;
+        try { await comTimeout(updateDoc(doc(db, "uniformes", it.id), { qtd: n })); editing = null; render(); }
+        catch (e) { ok.disabled = false; msg("Não foi possível salvar: " + errTxt(e)); }
+      };
+      no.onclick = () => { editing = null; render(); };
+      qt.append(inp, ok, no); tr.appendChild(qt);
+    } else cell(tr, String(it.qtd), it.qtd <= 2 ? "low" : "");
+    const td = document.createElement("td");
+    const ed = document.createElement("button"); ed.className = "ed"; ed.textContent = "Editar qtd.";
+    ed.onclick = () => { editing = it.id; render(); };
+    const b = document.createElement("button"); b.className = "del"; b.textContent = "Excluir";
+    b.onclick = async () => {
+      if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Confirmar?"; setTimeout(() => { b.dataset.sure = ""; b.textContent = "Excluir"; }, 4000); return; }
+      b.disabled = true;
+      try { await comTimeout(deleteDoc(doc(db, "uniformes", it.id))); }
+      catch (e) { b.disabled = false; msg("Não foi possível excluir: " + errTxt(e)); }
+    };
+    td.append(ed, b); tr.appendChild(td); tb.appendChild(tr);
+  });
+
+  const sel = $("selItem"), cur = sel.value; sel.textContent = "";
+  vis.forEach(it => { const o = document.createElement("option"); o.value = it.id; o.textContent = `${it.nome}${it.sexo ? " " + it.sexo.toLowerCase() : ""} – ${it.tam || "s/ tam."} (${it.qtd})`; sel.appendChild(o); });
+  if (cur) sel.value = cur;
+
+  const h = $("hist"); h.textContent = "";
+  if (!visLog.length) { const r = document.createElement("tr"); const t = cell(r, log.length ? "Nenhuma retirada com esses filtros." : "Nenhuma retirada registrada.", "empty"); t.colSpan = 8; h.appendChild(r); }
+  visLog.forEach(l => {
+    const tr = document.createElement("tr");
+    cell(tr, new Date(l.data).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }));
+    cell(tr, l.nome); cell(tr, l.categoria || "–"); cell(tr, l.sexo || "–"); cell(tr, l.tam || "–"); cell(tr, l.func); cell(tr, l.entregue || "–"); cell(tr, String(l.qtd));
+    h.appendChild(tr);
+  });
+}
+
+function start() {
+  onSnapshot(query(collection(db, "uniformes"), orderBy("nome")),
+    s => { items = s.docs.map(d => ({ ...d.data(), id: d.id })); setStatus("Conectado ao banco ✓"); render(); },
+    e => { setStatus("Sem conexão com o banco ✗"); msg("Erro ao carregar o estoque: " + errTxt(e)); });
+  onSnapshot(query(collection(db, "retiradas"), orderBy("data", "desc"), limit(200)),
+    s => { log = s.docs.map(d => d.data()); render(); },
+    e => msg("Erro ao carregar o histórico: " + errTxt(e)));
+}
+
+function ligarBotoes() {
+  $("fCat").onchange = e => { filtro.cat = e.target.value; render(); };
+  $("fSexo").onchange = e => { filtro.sexo = e.target.value; render(); };
+  $("fTam").onchange = e => { filtro.tam = e.target.value; render(); };
+  $("limpar").onclick = () => { filtro.cat = ""; filtro.sexo = ""; filtro.tam = ""; $("fCat").value = ""; $("fSexo").value = ""; render(); };
+
+  $("add").onclick = async () => {
+    if (!auth.currentUser) { msg("Ainda conectando. Aguarde um instante ou recarregue a página."); return; }
+    const categoria = $("cat").value, sexo = $("sexo").value, nome = $("nome").value.trim(), tam = $("tam").value.trim(), q = parseInt($("qtd").value, 10);
+    if (!categoria || !sexo || !nome || !(q > 0)) { msg("Escolha a categoria e o sexo, informe o item e uma quantidade válida."); return; }
+    msg("");
+    try { await comTimeout(addDoc(collection(db, "uniformes"), { categoria, sexo, nome, tam, qtd: q })); $("cat").value = ""; $("sexo").value = ""; $("nome").value = ""; $("tam").value = ""; $("qtd").value = ""; }
+    catch (e) { msg("Não foi possível adicionar: " + errTxt(e)); }
+  };
+
+  $("ret").onclick = async () => {
+    if (!auth.currentUser) { msg("Ainda conectando. Aguarde um instante ou recarregue a página."); return; }
+    const id = $("selItem").value, f = $("func").value.trim(), resp = $("resp").value.trim(), q = parseInt($("rqtd").value, 10);
+    const it = items.find(x => x.id === id);
+    if (!it || !f || !resp || !(q > 0)) { msg("Escolha o item e informe o funcionário que recebe, quem entrega e a quantidade."); return; }
+    if (q > it.qtd) { msg("Quantidade maior que o estoque (" + it.qtd + ")."); return; }
+    msg("");
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "uniformes", id), { qtd: increment(-q) });
+      batch.set(doc(collection(db, "retiradas")), { data: new Date().toISOString(), nome: it.nome, categoria: it.categoria || "", sexo: it.sexo || "", tam: it.tam || "", func: f, entregue: resp, qtd: q });
+      await comTimeout(batch.commit());
+      $("func").value = ""; $("rqtd").value = "1";
+    } catch (e) { msg("Não foi possível registrar a retirada: " + errTxt(e)); }
+  };
+}
+
+ligarBotoes();
+signInAnonymously(auth).then(() => { try { start(); } catch (e) { setStatus("Erro ao iniciar ✗"); msg("Erro ao iniciar a página: " + errTxt(e)); } }).catch(e => {
+  setStatus("Sem login ✗");
+  msg(e.code === "auth/operation-not-allowed"
+    ? "Ative o login Anônimo em Authentication > Método de login no Firebase."
+    : "Não foi possível conectar: " + errTxt(e));
+});
+</script>
+</body>
+</html>
